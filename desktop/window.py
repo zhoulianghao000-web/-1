@@ -1,7 +1,8 @@
 """侧边栏主窗口（PRD §6 全局窗口约束）。
 
 窗口 flags：无边框 / Tool / 置顶 / **不抢焦点**。
-位置与 Z 序由后端 services/docker.py 接管，前端不调用 move/resize。
+未贴边时默认停靠在**屏幕右侧垂直居中**，可用鼠标按住空白处拖动（无边框窗口必须自己实现拖动）。
+贴边开启后位置与 Z 序交由后端 services/docker.py 接管，前端不调用 move/resize。
 所有网络请求走子线程，结果通过 Signal 回主线程（CLAUDE.md §7.4）。
 WS 用 PySide6 自带 QWebSocket，不引入新依赖。
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 import json
 
 from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWebSockets import QWebSocket
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
@@ -22,8 +24,8 @@ VIEW_MAIN = 'main'
 
 # PRD §5 错误码 → 用户可读文案（不出现堆栈）
 ERR_TEXT = {
-    1000: '微信不可用，请启动微信后重试',
-    1001: '读取消息失败：确认微信窗口在前台、缩放 100%',
+    1000: '目标 IM 不可用，请启动 QQ 后重试',
+    1001: '读取消息失败：确认 QQ 窗口已打开、缩放 100%',
     2001: '请先选择一个会话',
     3001: '大模型调用失败',
     5000: '操作失败',
@@ -48,6 +50,8 @@ class SidebarWindow(QWidget):
         self._workers: list[ApiWorker] = []
         self._last_status: dict = {}
         self.current: str | None = None
+        self._placed = False  # 首次显示时定一次默认位置，之后不抢位置
+        self._drag_pos = None
 
         self.stack = QStackedWidget()
         layout = QVBoxLayout(self)
@@ -93,6 +97,29 @@ class SidebarWindow(QWidget):
             self.main_view.set_status(self._last_status)
         self.load_sessions()
 
+    # ---------------- 默认位置与拖动 ----------------
+    def showEvent(self, e) -> None:
+        super().showEvent(e)
+        if not self._placed:
+            self._placed = True
+            g = QGuiApplication.primaryScreen().availableGeometry()
+            # 屏幕右侧垂直居中：不贴边也不挡在屏幕中间
+            self.move(g.right() - self.width() - 24, g.top() + (g.height() - self.height()) // 2)
+
+    def mousePressEvent(self, e) -> None:
+        if e.button() == Qt.LeftButton:
+            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e) -> None:
+        if self._drag_pos is not None and (e.buttons() & Qt.LeftButton):
+            self.move(e.globalPosition().toPoint() - self._drag_pos)
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e) -> None:
+        self._drag_pos = None
+        super().mouseReleaseEvent(e)
+
     # ---------------- 通用：子线程跑请求 ----------------
     def _spawn(self, fn, slot) -> None:
         w = ApiWorker(fn, self)
@@ -130,8 +157,8 @@ class SidebarWindow(QWidget):
         self.connect_view.show_status(data)
         if self.stack.currentWidget() is self.main_view:
             self.main_view.set_status(data)
-        # PRD §4：全绿时自动进入主页面
-        if data.get('mode') == 'wxauto' and data.get('wechat_running'):
+        # PRD §4：全绿时自动进入主页面（qq 半自动模式窗口已找到也算就绪）
+        if data.get('mode') in ('wxauto', 'qq') and data.get('wechat_running'):
             self.show_main()
 
     # ---------------- sessions ----------------
@@ -196,7 +223,7 @@ class SidebarWindow(QWidget):
         if not (who and text):
             return
         self.main_view.set_sending(True)
-        self._spawn(lambda: self.client.fill(who, text), lambda r: self._on_sent(r, '已填入微信输入框', refresh=False))
+        self._spawn(lambda: self.client.fill(who, text), lambda r: self._on_sent(r, '已粘贴到 QQ 输入框', refresh=False))
 
     def on_send(self) -> None:
         who, text = self._ready_to_send()
@@ -259,7 +286,7 @@ class SidebarWindow(QWidget):
         listen = bool((res['data'] or {}).get('listen'))
         self.main_view.set_listen(listen)
         if listen:
-            self.main_view.toast('实时监听已开启（微信可能被拉到前台）', 'warn')
+            self.main_view.toast('实时监听已开启', 'ok')
             self._ws_connect()
         else:
             self.main_view.toast('实时监听已关闭', 'ok')

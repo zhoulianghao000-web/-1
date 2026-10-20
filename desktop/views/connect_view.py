@@ -13,8 +13,8 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 from theme import BRAND, ERROR, PANEL, SUB, TEXT, WARN
 
 HINT_TEXT = (
-    '前置条件：微信 PC 版 3.9.11.17 已登录、系统缩放 100%、窗口未最小化。\n'
-    '启动后端：在 backend/ 目录执行 python server.py'
+    'QQ 半自动模式：在 QQ 里选中对方的话按 Ctrl+C，再点侧边栏【刷新】即可读到消息；\n'
+    '发送时会把 QQ 拉到前台粘贴（回车由你手动按）。打包版把 .env 放在 exe 同目录。'
 )
 
 
@@ -98,10 +98,18 @@ class ConnectView(QWidget):
     def show_status(self, data: dict) -> None:
         """GET /api/status 成功：按 PRD §3 V0 状态映射表渲染。"""
         mode = data.get('mode')
-        nickname = data.get('nickname') or '微信侧边栏'
+        nickname = data.get('nickname') or 'QQ 侧边栏'
         running = bool(data.get('wechat_running'))
 
-        if mode == 'wxauto' and running:
+        if mode == 'qq' and running:
+            self.lblIcon.setStyleSheet(f'color: {BRAND}; font-size: 20px;')
+            self.lblTitle.setText('QQ 已就绪（半自动模式）')
+            self.btnContinue.hide()
+        elif mode == 'qq':
+            self.lblIcon.setStyleSheet(f'color: {WARN}; font-size: 20px;')
+            self.lblTitle.setText('QQ 未运行')
+            self.btnContinue.show()
+        elif mode == 'wxauto' and running:
             self.lblIcon.setStyleSheet(f'color: {BRAND}; font-size: 20px;')
             self.lblTitle.setText(f'已连接 {nickname}')
             self.btnContinue.hide()
