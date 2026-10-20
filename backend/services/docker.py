@@ -53,10 +53,19 @@ def find_hwnd_by_title(title: str) -> int:
     return found
 
 
-def make_no_activate(hwnd: int) -> None:
-    """加 WS_EX_NOACTIVATE / WS_EX_TOOLWINDOW，去掉任务栏按钮。"""
+def make_no_activate(hwnd: int, on: bool = True) -> None:
+    """加（默认）/ 去 WS_EX_NOACTIVATE，并统一加 WS_EX_TOOLWINDOW、去掉任务栏按钮。
+
+    微信 wxauto 模式必须 on：点击侧边栏不能把焦点从微信输入框抢走，否则 SendKeys 打到自己身上。
+    QQ 半自动模式必须 off：用户要在侧边栏里填"补充要求"、改生成的回复，
+    带 NOACTIVATE 的窗口拿不到键盘焦点，输入框会点不进去（实测现象）。
+    """
     style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-    style |= win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW
+    if on:
+        style |= win32con.WS_EX_NOACTIVATE
+    else:
+        style &= ~win32con.WS_EX_NOACTIVATE
+    style |= win32con.WS_EX_TOOLWINDOW
     style &= ~win32con.WS_EX_APPWINDOW
     win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style)
     win32gui.SetWindowPos(
@@ -99,11 +108,13 @@ class Docking:
         width: int = 380,
         target_class: str = DEFAULT_TARGET_CLASS,
         target_title: str = '',
+        no_activate: bool = True,
     ) -> None:
         self.sidebar_title = sidebar_title
         self.width = width
         self.target_class = target_class
         self.target_title = target_title
+        self.no_activate = no_activate
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.sidebar_hwnd: int = 0
@@ -129,7 +140,7 @@ class Docking:
                     if not self.sidebar_hwnd:
                         time.sleep(0.3)
                         continue
-                    make_no_activate(self.sidebar_hwnd)
+                    make_no_activate(self.sidebar_hwnd, self.no_activate)
 
                 left, top, right, bottom = win32gui.GetWindowRect(wx_hwnd)
                 w, h = right - left, bottom - top

@@ -264,7 +264,11 @@ Query：`who`（string，可选，缺省用当前会话）、`limit`（int，默
 
 1. **采集层只能走 Adapter**：UI 与业务代码**禁止直接 import wxauto / pywin32**。所有微信读写必须经 `backend/adapters/` 的 `BaseAdapter` 实现；换微信 4.x 方案时只新增一个 Adapter。
 2. **只有后端进程碰微信**：UI（PySide6）只能通过 §4 的 HTTP 接口通信，不得自己操作微信窗口/句柄。
-3. **侧边栏必须"点击不抢焦点"**：窗口必须带 `WS_EX_NOACTIVATE`（win32）+ `Qt.WindowDoesNotAcceptFocus`。**禁止**在主窗口上调用 `activateWindow()` / `raise_()` / `setFocus()`，也禁止任何"自动聚焦"逻辑——一旦抢焦点，粘贴会打到侧边栏自己身上。
+3. **侧边栏默认"点击不抢焦点"**：窗口默认带 `WS_EX_NOACTIVATE`（win32）+ `Qt.WindowDoesNotAcceptFocus`。**禁止**在主窗口上调用 `activateWindow()` / `raise_()` / `setFocus()`，也禁止任何"自动聚焦"逻辑——一旦抢焦点，粘贴会打到侧边栏自己身上。
+   - **例外（QQ 半自动模式）**：适配器自己会激活 QQ 窗口粘贴，不依赖"QQ 一直持焦点"，
+     而带 `NOACTIVATE` 的窗口**拿不到键盘焦点**→ "补充要求"填不进去、生成的回复改不了（实测现象）。
+     因此 `mode=qq` 时 UI 去掉 `WindowDoesNotAcceptFocus`，后端 `Docking(no_activate=False)`，
+     验证见 `_verify_input.py`（`窗口可激活=True / 输入框可获焦点=True`）。wxauto 模式仍严格保持不抢焦点。
 4. **PySide6 子线程禁止直接操作控件**：跨线程更新 UI 必须走信号槽（`Signal` → 主线程槽函数）；网络请求、轮询放在 `QThread`。
 5. **契约先行**：新增接口/表/环境变量，必须先更新本文件（§4/§6/§9）再写代码；响应一律用 §5 信封。
 

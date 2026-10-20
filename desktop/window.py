@@ -52,6 +52,7 @@ class SidebarWindow(QWidget):
         self.current: str | None = None
         self._placed = False  # 首次显示时定一次默认位置，之后不抢位置
         self._drag_pos = None
+        self._accept_focus = False  # 当前窗口 flags 是否允许拿到键盘焦点
 
         self.stack = QStackedWidget()
         layout = QVBoxLayout(self)
@@ -120,6 +121,23 @@ class SidebarWindow(QWidget):
         self._drag_pos = None
         super().mouseReleaseEvent(e)
 
+    def _set_accept_focus(self, on: bool) -> None:
+        """按 Adapter 决定是否允许侧边栏拿到键盘焦点。
+
+        - wxauto（微信 3.9）：**必须不抢焦点**，否则点击侧边栏会让微信输入框失焦、SendKeys 打空
+        - QQ 半自动：**必须能拿焦点**，否则"补充要求"填不进去、生成的回复改不了
+          （适配器自己会激活 QQ 窗口粘贴，不依赖"QQ 一直持焦点"）
+        """
+        if self._accept_focus == on:
+            return
+        self._accept_focus = on
+        flags = self.windowFlags()
+        flags = (flags & ~Qt.WindowDoesNotAcceptFocus) if on else (flags | Qt.WindowDoesNotAcceptFocus)
+        pos = self.pos()
+        self.setWindowFlags(flags)  # 改 flags 后必须重新 show，位置会被重置
+        self.show()
+        self.move(pos)
+
     # ---------------- 通用：子线程跑请求 ----------------
     def _spawn(self, fn, slot) -> None:
         w = ApiWorker(fn, self)
@@ -154,6 +172,7 @@ class SidebarWindow(QWidget):
             return
         data = res['data'] or {}
         self._last_status = data
+        self._set_accept_focus(data.get('mode') == 'qq')
         self.connect_view.show_status(data)
         if self.stack.currentWidget() is self.main_view:
             self.main_view.set_status(data)
@@ -195,7 +214,12 @@ class SidebarWindow(QWidget):
             self.main_view.show_messages_empty()
             return
         data = res['data'] or {}
-        self.main_view.set_messages(data.get('messages') or [])
+        msgs = data.get('messages') or []
+        if not msgs and self._last_status.get('mode') == 'qq':
+            # QQ 读不到消息流，空态要告诉人下一步怎么操作，而不是干巴巴一句"暂无消息"
+            self.main_view.show_messages_empty('在 QQ 里选中对方的话按 Ctrl+C，再点"会话"右侧 ↻ 刷新')
+            return
+        self.main_view.set_messages(msgs)
 
     # ---------------- 生成建议回复（PRD §3.6 C）----------------
     def on_generate(self) -> None:

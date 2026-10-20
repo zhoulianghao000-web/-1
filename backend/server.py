@@ -60,6 +60,8 @@ def ensure_docking() -> Docking:
             width=config.SIDEBAR_WIDTH,
             target_class=config.TARGET_CLASS,
             target_title=config.TARGET_TITLE,
+            # QQ 半自动模式：侧边栏要能拿到键盘焦点（让人填"补充要求"、改回复）
+            no_activate=(config.SIDEBAR_ADAPTER != 'qq'),
         )
     return state['docking']
 

@@ -216,7 +216,10 @@ class MainView(QWidget):
     def set_status(self, data: dict) -> None:
         mode = data.get('mode')
         self.lblNickname.setText(data.get('nickname') or '微信侧边栏')
-        if mode == 'wxauto':
+        if mode == 'qq':
+            self.lblMode.setText('QQ 半自动')
+            self.lblMode.setStyleSheet(f'color: {BRAND}; font-size: 11px;')
+        elif mode == 'wxauto':
             self.lblMode.setText('已连微信')
             self.lblMode.setStyleSheet(f'color: {BRAND}; font-size: 11px;')
         else:
@@ -290,10 +293,10 @@ class MainView(QWidget):
         self.lblMsgEmpty.hide()
         self.lblMsgLoading.show()
 
-    def show_messages_empty(self) -> None:
+    def show_messages_empty(self, hint: str | None = None) -> None:
         self.lblMsgLoading.hide()
         self.listMessages.hide()
-        self.lblMsgEmpty.setText('暂无消息')
+        self.lblMsgEmpty.setText(hint or '暂无消息')
         self.lblMsgEmpty.show()
 
     def set_messages(self, messages: list) -> None:
