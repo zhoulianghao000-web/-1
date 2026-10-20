@@ -59,6 +59,22 @@ def ensure_docking() -> Docking:
     return state['docking']
 
 
+# ---------------- §4.10 幂等（防重复发送）----------------
+_IDEM_TTL = 3.0
+_idem: dict = {}
+
+
+def _idempotent(key: tuple, executor):
+    """3 秒内相同 key 直接返回上次结果，不重复执行。返回 (result, duplicated)。"""
+    now = time.time()
+    hit = _idem.get(key)
+    if hit and now - hit[0] < _IDEM_TTL:
+        return hit[1], True
+    result = executor()
+    _idem[key] = (now, result)
+    return result, False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
@@ -181,12 +197,15 @@ async def fill(body: SendIn):
     if not body.text.strip():
         return fail(ERR_BAD_PARAM, 'text 不能为空')
     try:
-        r = ensure_adapter().fill(who, body.text)
+        r, dup = _idempotent(('fill', who, body.text), lambda: ensure_adapter().fill(who, body.text))
     except Exception as e:
         return fail(ERR_INTERNAL, f'{type(e).__name__}: {e}')
     if not r.get('ok'):
         return fail(ERR_INTERNAL, r.get('error') or '填入失败')
-    return ok({'ok': True, 'detail': r.get('detail') or f'已填入输入框：{who}'})
+    data = {'ok': True, 'detail': r.get('detail') or f'已填入输入框：{who}'}
+    if dup:
+        data['duplicated'] = True
+    return ok(data)
 
 
 # ---------------- §4.6 填入并发送 ----------------
@@ -197,28 +216,36 @@ async def send(body: SendIn):
         return fail(ERR_NO_CHAT)
     if not body.text.strip():
         return fail(ERR_BAD_PARAM, 'text 不能为空')
-    try:
+    def _do_send():
         r = ensure_adapter().send(who, body.text)
+        if r.get('ok'):
+            try:
+                db.save_messages(
+                    who,
+                    [
+                        {
+                            'id': f'self-{int(time.time() * 1000)}',
+                            'sender': '我',
+                            'type': 'self',
+                            'content': body.text,
+                            'msg_ts': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                        }
+                    ],
+                )
+            except Exception:
+                pass
+        return r
+
+    try:
+        r, dup = _idempotent(('send', who, body.text), _do_send)
     except Exception as e:
         return fail(ERR_INTERNAL, f'{type(e).__name__}: {e}')
     if not r.get('ok'):
         return fail(ERR_INTERNAL, r.get('error') or '发送失败')
-    try:
-        db.save_messages(
-            who,
-            [
-                {
-                    'id': f'self-{int(time.time() * 1000)}',
-                    'sender': '我',
-                    'type': 'self',
-                    'content': body.text,
-                    'msg_ts': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-                }
-            ],
-        )
-    except Exception:
-        pass
-    return ok({'ok': True, 'detail': r.get('detail') or f'已发送：{who}'})
+    data = {'ok': True, 'detail': r.get('detail') or f'已发送：{who}'}
+    if dup:
+        data['duplicated'] = True
+    return ok(data)
 
 
 # ---------------- §4.7 贴边跟随开关 ----------------

@@ -17,8 +17,6 @@ def main() -> None:
     app.setStyleSheet(theme.QSS)
 
     win = SidebarWindow()
-    # V1.main 尚未实现（下一页开发），此处仅记录请求
-    win.main_requested.connect(lambda: print('[app] 请求进入 V1.main：尚未实现'))
     win.show()
     sys.exit(app.exec())
 

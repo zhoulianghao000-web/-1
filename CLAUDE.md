@@ -40,7 +40,7 @@
 | Web 框架 | FastAPI | `0.151.0` | |
 | ASGI 服务器 | uvicorn | `0.54.0` | 仅本地回环 `127.0.0.1` |
 | HTTP 客户端 | httpx | `0.28.1` | 调 LLM 用，超时 30s |
-| 微信采集 | wxauto | `39.2.1` | **不在 PyPI**，从 GitHub 源码安装；绑死微信 3.9.11.17 |
+| 微信采集 | wxauto / **4.x Adapter（待实现）** | `39.2.1` | wxauto **不在 PyPI**，从 GitHub 源码安装；**仅支持微信 3.9.11.17**，对本机 4.1.15.13 无效 |
 | Windows API | pywin32 | `312` | 窗口句柄、贴边、无焦点 |
 | 数据库 | SQLite | 内置（Python 3.14 自带 sqlite3） | 不装任何数据库服务 |
 | ORM | 不使用 | — | 直接写 SQL；SQLModel 属**未批准**依赖，需先改本文档 |
@@ -163,6 +163,13 @@ Query：`who`（string，可选，缺省用当前会话）、`limit`（int，默
 ### 4.9 `WS /ws/messages` — 新消息推送
 仅在 `listen=true` 时推送：`{ "type": "new", "data": { "张三": [ {…消息对象} ] } }`
 
+### 4.10 幂等规则（防重复发送）
+适用于 `POST /api/send` 与 `POST /api/fill`：
+- **3 秒内**相同 `{who, text}` 视为重复提交，**不重复执行**发送/填入，直接返回上次结果
+- 响应 `data` 增加 `duplicated: true`（首次为 `false`），`code` 仍为 `0`，UI 提示"已发送（忽略重复点击）"
+- 实现：进程内 `{(who, text): (ts, result)}` 缓存，TTL 3 秒，不需要持久化
+- 代价：3 秒内"故意连发两条相同内容"会被拦截 —— MVP 阶段优先防误触，接受该代价
+
 ---
 
 ## 5. 统一响应格式
@@ -265,7 +272,11 @@ Query：`who`（string，可选，缺省用当前会话）、`limit`（int，默
 1. **不做全自动无人值守回复**：所有发送必须由人点击触发。禁止"收到消息自动发送""定时群发""自动加好友"。
 2. **不做多账号 / 多开 / 多用户 / 权限**：单微信实例、单用户、单机。
 3. **不做云端化**：不部署服务器、不打包 Docker、不做 Web 控制台、不做移动端、不做远程访问。
-4. **不做微信 4.x 适配，不做注入 / Hook / 协议逆向**：只用 UI 自动化；当前锁死微信 3.9.11.17。
+4. **不做注入 / Hook / 协议逆向，MVP 阶段也不实现 4.x 采集代码**：只用 UI 自动化。
+   - 本机真实微信版本为 **4.1.15.13**（`C:\Program Files\Tencent\Weixin`），已装 wxauto 只支持 3.9.11.17，**对 4.x 无效**
+   - 因此 MVP 全程跑 **mock 模式**；真机验收（§11）需先补 4.x Adapter（候选：`wechatauto-replica`），
+     架构已由 `adapters/base.py` 预留，**新增一个 Adapter 即可，UI 与业务代码不动**
+   - 4.x 采集代码在"能登录微信并实测"之前不得写入仓库（无法验证的代码不入库）
 5. **不做 RAG / 知识库 / 插件系统 / 多轮长期记忆 / 图片语音识别 / 消息全文检索 UI**：MVP 只有"收 → 想 → 发"。
 
 ---
@@ -292,8 +303,9 @@ python server.py                      # http://127.0.0.1:8765
 python desktop/app.py
 ```
 
-**前置条件**：Windows 10/11、微信 PC 版 **3.9.11.17**、已登录、**系统缩放 100%**、窗口非最小化。
-不满足时后端自动降级 mock 模式（UI 顶部显示"演示数据"），**不算启动失败**。
+**前置条件**：Windows 10/11、微信 PC 版已登录、**系统缩放 100%**、窗口非最小化。
+本机微信为 **4.1.15.13**，而已装 wxauto 只支持 3.9.11.17 → **当前必然降级 mock 模式**
+（UI 顶部显示"演示数据"），**不算启动失败**，全部功能闭环仍可验证。
 
 开发期调试 UI 可单独跑：`python desktop/app.py`（后端未启动则 UI 显示"后端未连接"）。
 
@@ -317,13 +329,18 @@ python desktop/app.py
 
 ## 10. 当前状态与下一步（每次会话开工前先看这里）
 
-**已完成**：`backend/server.py`、`adapters/`（含 mock 降级）、`services/ai.py`、`services/docker.py`；已验证后端可跑、降级链路可用。
+**已完成**：
+- 后端：`server.py` / `schemas.py` / `config.py` / `db.py` / `adapters/`（含 mock 降级）/ `services/ai.py` / `services/docker.py`
+- 后端 9 接口全部按 §5 信封返回，已通过真实 HTTP 验证（9/9），见 `docs/验证报告.md`
+- 清理：`src-tauri/`、`package.json`、`backend/launcher.py` 已删除（备份在 `_backup/`）；`web/` 因含 2528 个文件触发批量删除保护，**待人工确认删除**
+- 前端：`desktop/` 骨架 + `V0.connect`（加载/错误/正常三态已验证）
+
 **待办（按顺序）**：
-1. 删除废弃目录 `web/`、`src-tauri/`、`backend/launcher.py`
-2. 新增 `backend/schemas.py` + `backend/config.py` + `backend/db.py`（统一响应信封 + 建表）
-3. 把 §4 全部接口套上信封
-4. 新增 `desktop/`（PySide6 UI）：`app.py` / `window.py` / `widgets.py` / `api_client.py`
-5. 人工验收 §11 的 5 条标准
+1. 开发 `V1.main`（PRD §3）：会话区 / 消息区 / 回复区 / 贴边+监听开关（T1–T6）
+2. 修复重复发送：前端请求中禁用按钮 + 后端 3 秒幂等（T7，接口见 §4.10）
+3. 重写 `README.md`（当前仍描述已废弃的 Tauri/React 方案）（T9）
+4. 人工确认删除 `web/`
+5. 人工验收 §11 的 5 条标准（**需真机微信 4.x Adapter + 已登录微信**，当前阻塞）
 
 ## 11. 验收标准（必须真人手动验证，AI 无法自测）
 

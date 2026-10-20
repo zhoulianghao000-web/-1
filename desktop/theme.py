@@ -36,6 +36,11 @@ QPushButton[primary="true"] {{
     border: 1px solid {BRAND_DARK};
     color: #ffffff;
 }}
+QPushButton[primary="true"]:disabled {{
+    background: #1d232c;
+    border-color: {LINE};
+    color: #5b6270;
+}}
 QToolButton {{
     background: transparent;
     border: none;
