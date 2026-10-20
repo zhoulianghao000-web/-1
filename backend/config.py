@@ -5,19 +5,26 @@ python-dotenv 为可选依赖，装了才自动加载 .env。
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# 打包后（PyInstaller）根目录 = exe 所在目录：.env / data / logs 都在它旁边。
+# 注意：打包形态下 __file__ 指向临时解压目录（_MEIxxx），不能用它定位 .env。
+ROOT = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, 'frozen', False)
+    else Path(__file__).resolve().parent.parent
+)
+BACKEND = ROOT / 'backend'
 
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).resolve().parent.parent / '.env')
+    load_dotenv(ROOT / '.env')
 except Exception:
     pass
 
 import os  # noqa: E402
-
-ROOT = Path(__file__).resolve().parent.parent
-BACKEND = ROOT / 'backend'
 
 
 def _str(name: str, default: str = '') -> str:
@@ -41,9 +48,9 @@ SIDEBAR_WIDTH = _int('SIDEBAR_WIDTH', 380)
 SIDEBAR_ADAPTER = _str('SIDEBAR_ADAPTER', 'auto').lower()
 
 # ---- 贴边跟随的目标 IM 窗口（先按类名找，再按标题找）----
-# 默认微信 3.9 窗口类名；换成其他 IM（如 QQ NT）时用 SIDEBAR_TARGET_TITLE 指定窗口标题
-TARGET_CLASS = _str('SIDEBAR_TARGET_CLASS', 'WeChatMainWndForPC')
-TARGET_TITLE = _str('SIDEBAR_TARGET_TITLE', '')
+# 默认目标为 QQ NT（窗口标题 "QQ"）；若要贴微信 3.9，设 SIDEBAR_TARGET_CLASS=WeChatMainWndForPC
+TARGET_CLASS = _str('SIDEBAR_TARGET_CLASS', '')
+TARGET_TITLE = _str('SIDEBAR_TARGET_TITLE', 'QQ')
 
 # ---- 数据库 ----
 DB_PATH = Path(os.getenv('SIDEBAR_DB', '') or (ROOT / 'data' / 'sidebar.db'))

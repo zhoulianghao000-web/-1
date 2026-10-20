@@ -21,13 +21,14 @@
 
 ## 1. 项目概述
 
-- **名称**：WeChat Sidebar（微信侧边栏外挂）
-- **一句话描述**：贴在 Windows 微信窗口右侧的无焦点浮窗，接收微信消息交给大模型生成回复建议，人工确认后一键填入或发送。
+- **名称**：IM Sidebar（IM 侧边栏助手；仓库目录名沿用 `wechat-sidebar`）
+- **目标 IM**：**QQ NT 9.9.31**（2026-10-20 起微信替换为 QQ，微信 4.x 无可用采集方案，见 §7.4）
+- **一句话描述**：贴在 Windows QQ 窗口右侧的无焦点浮窗，读取消息交给大模型生成回复建议，人工确认后一键填入或发送。
 - **目标用户**：本机自用、有 Python 基础但**不写前端/后端**的个人使用者；用于学习 Windows UI 自动化 + LLM 应用。
 - **核心功能（仅 3 条，超出即属违规）**
-  1. **收**：读取当前微信会话的最近消息（可选开启实时监听）
+  1. **收**：读取当前 QQ 会话的最近消息（QQ NT 无控件树 → **走剪贴板**；可选开启实时监听）
   2. **想**：调用大模型生成一条可直接发送的中文回复建议（LLM 不可用时规则兜底）
-  3. **发**：一键填入微信输入框，或填入并回车发送（**必须人工点击**）
+  3. **发**：一键粘贴到 QQ 输入框，或粘贴并回车发送（**必须人工点击**）
 
 ---
 
@@ -40,7 +41,7 @@
 | Web 框架 | FastAPI | `0.151.0` | |
 | ASGI 服务器 | uvicorn | `0.54.0` | 仅本地回环 `127.0.0.1` |
 | HTTP 客户端 | httpx | `0.28.1` | 调 LLM 用，超时 30s |
-| 微信采集 | wxauto / **4.x Adapter（待实现）** | `39.2.1` | wxauto **不在 PyPI**，从 GitHub 源码安装；**仅支持微信 3.9.11.17**，对本机 4.1.15.13 无效 |
+| IM 采集 | **`qq_adapter`（QQ NT 半自动）** / wxauto | 内置 | QQ 走剪贴板+窗口激活，**零新增依赖**（只用 pywin32）；wxauto 不在 PyPI，仅支持微信 3.9.11.17，本机 4.1.15.13 用不上 |
 | Windows API | pywin32 | `312` | 窗口句柄、贴边、无焦点 |
 | 数据库 | SQLite | 内置（Python 3.14 自带 sqlite3） | 不装任何数据库服务 |
 | ORM | 不使用 | — | 直接写 SQL；SQLModel 属**未批准**依赖，需先改本文档 |
@@ -270,13 +271,13 @@ Query：`who`（string，可选，缺省用当前会话）、`limit`（int，默
 ### 本阶段不做的事（5 条 —— 违反即为自作主张）
 
 1. **不做全自动无人值守回复**：所有发送必须由人点击触发。禁止"收到消息自动发送""定时群发""自动加好友"。
-2. **不做多账号 / 多开 / 多用户 / 权限**：单微信实例、单用户、单机。
+2. **不做多账号 / 多开 / 多用户 / 权限**：单 IM 实例、单用户、单机。
 3. **不做云端化**：不部署服务器、不打包 Docker、不做 Web 控制台、不做移动端、不做远程访问。
-4. **不做注入 / Hook / 协议逆向，MVP 阶段也不实现 4.x 采集代码**：只用 UI 自动化。
-   - 本机真实微信版本为 **4.1.15.13**（`C:\Program Files\Tencent\Weixin`），已装 wxauto 只支持 3.9.11.17，**对 4.x 无效**
-   - 因此 MVP 全程跑 **mock 模式**；真机验收（§11）需先补 4.x Adapter（候选：`wechatauto-replica`），
-     架构已由 `adapters/base.py` 预留，**新增一个 Adapter 即可，UI 与业务代码不动**
-   - 4.x 采集代码在"能登录微信并实测"之前不得写入仓库（无法验证的代码不入库）
+4. **不做注入 / Hook / 协议逆向 / 读 IM 本地数据库**：只用 UI 自动化 + 剪贴板。
+   - 本机微信为 **4.1.15.13**，wxauto 只支持 3.9.11.17 → **目标 IM 已于 2026-10-20 切换为 QQ NT 9.9.31**
+   - QQ NT 无控件树（UIA 元素 2 个、子窗口仅 1 个 D3D 面）→ 走 `adapters/qq_adapter.py` **半自动方案**：
+     读消息取剪贴板，发送 = 写剪贴板 + 激活窗口 + Ctrl+V(+Enter)
+   - 微信 4.x Adapter 在"能登录微信并实测"之前不得写入仓库（无法验证的代码不入库）
 5. **不做 RAG / 知识库 / 插件系统 / 多轮长期记忆 / 图片语音识别 / 消息全文检索 UI**：MVP 只有"收 → 想 → 发"。
 
 ---
@@ -303,11 +304,12 @@ python server.py                      # http://127.0.0.1:8765
 python desktop/app.py
 ```
 
-**前置条件**：Windows 10/11、微信 PC 版已登录、**系统缩放 100%**、窗口非最小化。
-本机微信为 **4.1.15.13**，而已装 wxauto 只支持 3.9.11.17 → **当前必然降级 mock 模式**
-（UI 顶部显示"演示数据"），**不算启动失败**，全部功能闭环仍可验证。
+**前置条件**：Windows 10/11、QQ 已登录并打开聊天窗口、**系统缩放 100%**、窗口非最小化。
+找不到 QQ 窗口时后端仍可启动（`status.detail` 会提示"未找到 QQ 窗口"），**不算启动失败**。
+QQ 模式读消息依赖剪贴板：在 QQ 里选中对方的话 Ctrl+C，侧边栏刷新即可看到。
 
 开发期调试 UI 可单独跑：`python desktop/app.py`（后端未启动则 UI 显示"后端未连接"）。
+**直接双击 `dist/SidebarIM.exe` 也行**：打包形态下后端内嵌在同一进程（见 §12）。
 
 ---
 
@@ -320,9 +322,9 @@ python desktop/app.py
 | `OPENAI_MODEL` | `deepseek-chat` | 否 | 模型名 |
 | `SIDEBAR_PORT` | `8765` | 否 | 后端端口，UI 的 `api_client.py` 需与之对应 |
 | `SIDEBAR_TITLE` | `WeChat Sidebar` | 否 | 侧边栏窗口标题，**`docker.py` 靠它找窗口句柄，改名需同步** |
-| `SIDEBAR_ADAPTER` | `auto` | 否 | `auto` / `wxauto` / `mock`；`mock` 强制演示数据 |
-| `SIDEBAR_TARGET_CLASS` | `WeChatMainWndForPC` | 否 | 贴边跟随的**目标 IM 窗口类名**（微信 3.9） |
-| `SIDEBAR_TARGET_TITLE` | 空 | 否 | 目标窗口标题；类名找不到时按标题匹配（换 QQ/微信 4.x 时用，不改代码） |
+| `SIDEBAR_ADAPTER` | `qq` | 否 | `qq`（默认）/ `wxauto` / `mock` / `auto`；`auto` = qq → wxauto → mock |
+| `SIDEBAR_TARGET_CLASS` | 空 | 否 | 贴边跟随的目标窗口类名（微信 3.9 填 `WeChatMainWndForPC`） |
+| `SIDEBAR_TARGET_TITLE` | `QQ` | 否 | 目标窗口标题；类名找不到时按标题匹配 |
 | `SIDEBAR_WIDTH` | `380` | 否 | 侧边栏宽度（px） |
 | `SIDEBAR_DB` | `../data/sidebar.db` | 否 | SQLite 文件路径（相对 `backend/`） |
 | `SIDEBAR_LOG_LEVEL` | `INFO` | 否 | 日志级别 |
@@ -332,20 +334,39 @@ python desktop/app.py
 ## 10. 当前状态与下一步（每次会话开工前先看这里）
 
 **已完成**：
-- 后端：`server.py` / `schemas.py` / `config.py` / `db.py` / `adapters/`（含 mock 降级）/ `services/ai.py` / `services/docker.py`
+- 后端：`server.py` / `schemas.py` / `config.py` / `db.py` / `adapters/`（qq / wxauto / mock）/ `services/ai.py` / `services/docker.py`
 - 后端 9 接口全部按 §5 信封返回，已通过真实 HTTP 验证（9/9），见 `docs/验证报告.md`
 - 清理：`src-tauri/`、`package.json`、`backend/launcher.py`、`web/` 已全部删除（备份在 `_backup/`）
-- 前端：`desktop/` 骨架 + `V0.connect`（加载/错误/正常三态已验证）
+- 前端：`desktop/` + `V0.connect`（三态）+ `V1.main`（会话/消息/回复/开关，含 WS 与 toast）
+- **目标 IM 已切到 QQ**：`adapters/qq_adapter.py`（半自动：剪贴板读消息 + 激活窗口粘贴/回车）
+- **重复发送已修**：前端请求中禁用按钮 + 后端 3 秒幂等（§4.10）
+- **打包已完成**：`dist/SidebarIM.exe`（单文件、无控制台、**不签名**，见 §12）
 
 **待办（按顺序）**：
-1. 开发 `V1.main`（PRD §3）：会话区 / 消息区 / 回复区 / 贴边+监听开关（T1–T6）
-2. 修复重复发送：前端请求中禁用按钮 + 后端 3 秒幂等（T7，接口见 §4.10）
-3. 人工验收 §11 的 5 条标准（**需真机 4.x Adapter + 已登录微信**，当前阻塞）
+1. 人工验收 §11 的 5 条标准（**需真人在 QQ 上操作**，AI 无法自测）
+2. （可选）将来要支持微信时：新增 `adapters/wechat4_adapter.py`，UI 与业务代码不动
 
 **QQ 探测结论（2026-10-20）**：本机 QQ NT 9.9.31（`C:\Program Files\Tencent\QQNT\QQ.exe`）
 窗口类名 `Chrome_WidgetWin_1`，**UIA 子树只有 2 个元素、子窗口只有 1 个 `Intermediate D3D Window`**
-→ 内容全靠 D3D 渲染，**读不到会话/消息文本**，因此 QQ 不能替代微信做完整闭环验证，
-仅可用于验证「贴边跟随 / 窗口存在与位置」（T11 第 5 条）。
+→ 内容全靠 D3D 渲染，**读不到会话/消息文本**。因此 QQ 采用半自动方案，能力边界见 §7.4 与
+`adapters/qq_adapter.py` 顶部注释。
+
+---
+
+## 12. 打包与发布（PyInstaller，**不签名**）
+
+```powershell
+python -m pip install PyInstaller          # 6.22.3，支持 Python 3.14
+python -m PyInstaller packaging/build.spec --noconfirm --clean
+```
+
+- 产物：`dist/SidebarIM.exe`（约 55MB，单文件，`--windowed` 无控制台）
+- **后端内嵌**：`desktop/app.py` 启动时会先看 8765 端口，没人占就在守护线程里起 uvicorn；
+  已有人在跑就复用。**双击 exe 即用，不用另开终端**
+- **配置**：`.env` 要放在 **exe 同目录**（打包后 `ROOT = exe 目录`，见 `backend/config.py`）
+- **数据与日志**：exe 同目录下 `data/sidebar.db`、`logs/app.log`
+- **不签名**：无证书，Windows SmartScreen 会弹"未知发布者"，点"更多信息 → 仍要运行"即可
+- 新增依赖后要同步 `packaging/build.spec` 里的 `hiddenimports`（尤其 uvicorn 的运行时模块是动态导入）
 
 ## 11. 验收标准（必须真人手动验证，AI 无法自测）
 
