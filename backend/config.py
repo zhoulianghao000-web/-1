@@ -40,6 +40,11 @@ SIDEBAR_TITLE = _str('SIDEBAR_TITLE', 'WeChat Sidebar')
 SIDEBAR_WIDTH = _int('SIDEBAR_WIDTH', 380)
 SIDEBAR_ADAPTER = _str('SIDEBAR_ADAPTER', 'auto').lower()
 
+# ---- 贴边跟随的目标 IM 窗口（先按类名找，再按标题找）----
+# 默认微信 3.9 窗口类名；换成其他 IM（如 QQ NT）时用 SIDEBAR_TARGET_TITLE 指定窗口标题
+TARGET_CLASS = _str('SIDEBAR_TARGET_CLASS', 'WeChatMainWndForPC')
+TARGET_TITLE = _str('SIDEBAR_TARGET_TITLE', '')
+
 # ---- 数据库 ----
 DB_PATH = Path(os.getenv('SIDEBAR_DB', '') or (ROOT / 'data' / 'sidebar.db'))
 

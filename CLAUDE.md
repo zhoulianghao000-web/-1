@@ -321,6 +321,8 @@ python desktop/app.py
 | `SIDEBAR_PORT` | `8765` | 否 | 后端端口，UI 的 `api_client.py` 需与之对应 |
 | `SIDEBAR_TITLE` | `WeChat Sidebar` | 否 | 侧边栏窗口标题，**`docker.py` 靠它找窗口句柄，改名需同步** |
 | `SIDEBAR_ADAPTER` | `auto` | 否 | `auto` / `wxauto` / `mock`；`mock` 强制演示数据 |
+| `SIDEBAR_TARGET_CLASS` | `WeChatMainWndForPC` | 否 | 贴边跟随的**目标 IM 窗口类名**（微信 3.9） |
+| `SIDEBAR_TARGET_TITLE` | 空 | 否 | 目标窗口标题；类名找不到时按标题匹配（换 QQ/微信 4.x 时用，不改代码） |
 | `SIDEBAR_WIDTH` | `380` | 否 | 侧边栏宽度（px） |
 | `SIDEBAR_DB` | `../data/sidebar.db` | 否 | SQLite 文件路径（相对 `backend/`） |
 | `SIDEBAR_LOG_LEVEL` | `INFO` | 否 | 日志级别 |
@@ -332,15 +334,18 @@ python desktop/app.py
 **已完成**：
 - 后端：`server.py` / `schemas.py` / `config.py` / `db.py` / `adapters/`（含 mock 降级）/ `services/ai.py` / `services/docker.py`
 - 后端 9 接口全部按 §5 信封返回，已通过真实 HTTP 验证（9/9），见 `docs/验证报告.md`
-- 清理：`src-tauri/`、`package.json`、`backend/launcher.py` 已删除（备份在 `_backup/`）；`web/` 因含 2528 个文件触发批量删除保护，**待人工确认删除**
+- 清理：`src-tauri/`、`package.json`、`backend/launcher.py`、`web/` 已全部删除（备份在 `_backup/`）
 - 前端：`desktop/` 骨架 + `V0.connect`（加载/错误/正常三态已验证）
 
 **待办（按顺序）**：
 1. 开发 `V1.main`（PRD §3）：会话区 / 消息区 / 回复区 / 贴边+监听开关（T1–T6）
 2. 修复重复发送：前端请求中禁用按钮 + 后端 3 秒幂等（T7，接口见 §4.10）
-3. 重写 `README.md`（当前仍描述已废弃的 Tauri/React 方案）（T9）
-4. 人工确认删除 `web/`
-5. 人工验收 §11 的 5 条标准（**需真机微信 4.x Adapter + 已登录微信**，当前阻塞）
+3. 人工验收 §11 的 5 条标准（**需真机 4.x Adapter + 已登录微信**，当前阻塞）
+
+**QQ 探测结论（2026-10-20）**：本机 QQ NT 9.9.31（`C:\Program Files\Tencent\QQNT\QQ.exe`）
+窗口类名 `Chrome_WidgetWin_1`，**UIA 子树只有 2 个元素、子窗口只有 1 个 `Intermediate D3D Window`**
+→ 内容全靠 D3D 渲染，**读不到会话/消息文本**，因此 QQ 不能替代微信做完整闭环验证，
+仅可用于验证「贴边跟随 / 窗口存在与位置」（T11 第 5 条）。
 
 ## 11. 验收标准（必须真人手动验证，AI 无法自测）
 

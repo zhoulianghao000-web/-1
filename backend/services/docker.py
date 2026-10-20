@@ -15,15 +15,26 @@ import win32api
 import win32con
 import win32gui
 
-WX_CLASS = 'WeChatMainWndForPC'
+DEFAULT_TARGET_CLASS = 'WeChatMainWndForPC'
 SM_XVIRTUALSCREEN = 76
 SM_YVIRTUALSCREEN = 77
 SM_CXVIRTUALSCREEN = 78
 SM_CYVIRTUALSCREEN = 79
 
 
-def find_wechat_hwnd() -> int:
-    return win32gui.FindWindow(WX_CLASS, None)
+def find_target_hwnd(target_class: str = '', target_title: str = '') -> int:
+    """找贴边跟随的目标 IM 窗口：先按类名精确匹配，再按窗口标题匹配。
+
+    target_class / target_title 由 config.TARGET_* 传入，
+    这样换目标 IM（微信 3.9 / 4.x / QQ NT）只改环境变量，不改代码。
+    """
+    if target_class:
+        h = win32gui.FindWindow(target_class, None)
+        if h:
+            return h
+    if target_title:
+        return find_hwnd_by_title(target_title)
+    return 0
 
 
 def find_hwnd_by_title(title: str) -> int:
@@ -82,9 +93,17 @@ def clamp_to_screen(x: int, y: int, w: int, h: int) -> tuple[int, int]:
 class Docking:
     """后台线程：每 120ms 跟随一次微信窗口。"""
 
-    def __init__(self, sidebar_title: str, width: int = 380) -> None:
+    def __init__(
+        self,
+        sidebar_title: str,
+        width: int = 380,
+        target_class: str = DEFAULT_TARGET_CLASS,
+        target_title: str = '',
+    ) -> None:
         self.sidebar_title = sidebar_title
         self.width = width
+        self.target_class = target_class
+        self.target_title = target_title
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.sidebar_hwnd: int = 0
@@ -98,7 +117,7 @@ class Docking:
         last_z = 0
         while not self._stop.is_set():
             try:
-                wx_hwnd = find_wechat_hwnd()
+                wx_hwnd = find_target_hwnd(self.target_class, self.target_title)
                 if not wx_hwnd:
                     if self.sidebar_hwnd:
                         win32gui.ShowWindow(self.sidebar_hwnd, win32con.SW_HIDE)

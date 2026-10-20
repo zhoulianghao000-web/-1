@@ -37,7 +37,7 @@ from schemas import (  # noqa: E402
     fail,
     ok,
 )
-from services import Docking, generate_reply  # noqa: E402
+from services import Docking, find_target_hwnd, generate_reply  # noqa: E402
 
 state: dict = {
     'adapter': None,
@@ -55,7 +55,12 @@ def ensure_adapter():
 
 def ensure_docking() -> Docking:
     if state['docking'] is None:
-        state['docking'] = Docking(config.SIDEBAR_TITLE, width=config.SIDEBAR_WIDTH)
+        state['docking'] = Docking(
+            config.SIDEBAR_TITLE,
+            width=config.SIDEBAR_WIDTH,
+            target_class=config.TARGET_CLASS,
+            target_title=config.TARGET_TITLE,
+        )
     return state['docking']
 
 
@@ -107,9 +112,7 @@ async def status():
         d = ensure_docking()
         wechat_running = False
         try:
-            import win32gui
-
-            wechat_running = bool(win32gui.FindWindow('WeChatMainWndForPC', None))
+            wechat_running = bool(find_target_hwnd(config.TARGET_CLASS, config.TARGET_TITLE))
         except Exception:
             pass
         st = a.status()
