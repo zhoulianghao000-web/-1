@@ -30,14 +30,16 @@ from schemas import (  # noqa: E402
     ERR_WECHAT_UNAVAILABLE,
     DockIn,
     ListenIn,
+    QuickReplyIn,
     ReplyIn,
     SendIn,
+    SettingsIn,
     clamp_limit,
     degrade,
     fail,
     ok,
 )
-from services import Docking, find_target_hwnd, generate_reply  # noqa: E402
+from services import Docking, find_target_hwnd, generate_reply, llm_config  # noqa: E402
 
 state: dict = {
     'adapter': None,
@@ -46,10 +48,37 @@ state: dict = {
     'listen': False,
 }
 
+VALID_ADAPTERS = ('qq', 'wxauto', 'mock', 'auto')
+
+
+def effective_adapter_name() -> str:
+    """设置页保存的 adapter（DB）优先于 .env。"""
+    v = (db.get_setting('adapter') or '').strip().lower()
+    return v if v in VALID_ADAPTERS else (config.SIDEBAR_ADAPTER or 'auto').lower()
+
+
+def effective_width() -> int:
+    """设置页保存的宽度（DB）优先于 .env，夹在 300-600。"""
+    try:
+        return max(300, min(600, int(db.get_setting('sidebar_width') or config.SIDEBAR_WIDTH)))
+    except Exception:
+        return config.SIDEBAR_WIDTH
+
+
+def settings_view() -> dict:
+    cfg = llm_config()
+    return {
+        'api_key': cfg['api_key'],
+        'base_url': cfg['base_url'],
+        'model': cfg['model'],
+        'width': effective_width(),
+        'adapter': effective_adapter_name(),
+    }
+
 
 def ensure_adapter():
     if state['adapter'] is None:
-        state['adapter'] = create_adapter(config.SIDEBAR_ADAPTER)
+        state['adapter'] = create_adapter(effective_adapter_name())
     return state['adapter']
 
 
@@ -57,11 +86,11 @@ def ensure_docking() -> Docking:
     if state['docking'] is None:
         state['docking'] = Docking(
             config.SIDEBAR_TITLE,
-            width=config.SIDEBAR_WIDTH,
+            width=effective_width(),
             target_class=config.TARGET_CLASS,
             target_title=config.TARGET_TITLE,
             # QQ 半自动模式：侧边栏要能拿到键盘焦点（让人填"补充要求"、改回复）
-            no_activate=(config.SIDEBAR_ADAPTER != 'qq'),
+            no_activate=(effective_adapter_name() != 'qq'),
         )
     return state['docking']
 
@@ -292,6 +321,79 @@ async def ws_messages(ws: WebSocket):
             await asyncio.sleep(2)
     except WebSocketDisconnect:
         return
+
+
+# ---------------- §4.11 设置读写（V2 设置页）----------------
+@app.get('/api/settings')
+async def get_settings():
+    return ok(settings_view())
+
+
+@app.put('/api/settings')
+async def put_settings(body: SettingsIn):
+    if body.adapter is not None and body.adapter not in VALID_ADAPTERS:
+        return fail(ERR_BAD_PARAM, f'adapter 只能是 {" / ".join(VALID_ADAPTERS)}')
+
+    prev_adapter = effective_adapter_name()
+    if body.api_key is not None:
+        db.set_setting('openai_api_key', body.api_key.strip())
+    if body.base_url is not None:
+        db.set_setting('openai_base_url', body.base_url.strip())
+    if body.model is not None:
+        db.set_setting('llm_model', body.model.strip())
+    if body.width is not None:
+        db.set_setting('sidebar_width', str(body.width))
+
+    adapter_changed = body.adapter is not None and body.adapter != prev_adapter
+    if adapter_changed:
+        db.set_setting('adapter', body.adapter)
+
+    data = settings_view()
+
+    # 宽度即时生效：贴边线程直接改
+    if body.width is not None and state['docking'] is not None:
+        state['docking'].width = body.width
+
+    if adapter_changed:
+        # 决策（grill 2026-10-21）：惰性重建——只丢引用不 close，
+        # 在途请求拿着旧实例自然跑完；自动关监听（换 IM 后需手动重开）；
+        # 贴边线程停掉，下次 ensure_docking 按新 no_activate 重建。
+        state['listen'] = False
+        state['adapter'] = None
+        d = state['docking']
+        if d:
+            try:
+                d.stop()
+            except Exception:
+                pass
+            state['docking'] = None
+        data['adapter_changed'] = True
+
+    return ok(data)
+
+
+# ---------------- §4.12 话术库（V3 话术页）----------------
+@app.get('/api/quick-replies')
+async def quick_replies():
+    return ok({'items': db.list_quick_replies()})
+
+
+@app.post('/api/quick-replies')
+async def add_quick_reply(body: QuickReplyIn):
+    content = body.content.strip()
+    if not content:
+        return fail(ERR_BAD_PARAM, 'content 不能为空')
+    tag = body.tag.strip() or '常用'
+    db.add_quick_reply(tag, content)
+    return ok({'items': db.list_quick_replies()})
+
+
+@app.delete('/api/quick-replies/{qid}')
+async def delete_quick_reply(qid: int):
+    deleted = db.delete_quick_reply(qid)
+    if not deleted:
+        return fail(ERR_BAD_PARAM, f'话术不存在：{qid}')
+    return ok({'deleted': True, 'items': db.list_quick_replies()})
 
 
 if __name__ == '__main__':

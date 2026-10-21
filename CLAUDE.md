@@ -159,7 +159,8 @@ Query：`who`（string，可选，缺省用当前会话）、`limit`（int，默
 ### 4.8 `POST /api/listen` — 实时监听开关
 请求体：`{ "on": false }`
 响应 `data`：`{ "listen": false }`
-> 开启后后端会周期性调用 wxauto，可能把微信拉到前台。**默认关闭**。
+> 开启后后端每 2 秒轮询一次适配器。**默认关闭**。QQ 模式下 `poll_new` 返回空（读不到消息流），
+> 勾了也不会来新消息，属已知能力边界。
 
 ### 4.9 `WS /ws/messages` — 新消息推送
 仅在 `listen=true` 时推送：`{ "type": "new", "data": { "张三": [ {…消息对象} ] } }`
@@ -170,6 +171,24 @@ Query：`who`（string，可选，缺省用当前会话）、`limit`（int，默
 - 响应 `data` 增加 `duplicated: true`（首次为 `false`），`code` 仍为 `0`，UI 提示"已发送（忽略重复点击）"
 - 实现：进程内 `{(who, text): (ts, result)}` 缓存，TTL 3 秒，不需要持久化
 - 代价：3 秒内"故意连发两条相同内容"会被拦截 —— MVP 阶段优先防误触，接受该代价
+
+### 4.11 `GET|PUT /api/settings` — 设置读写（V2）
+`GET` 响应 `data`：`{ "api_key", "base_url", "model", "width", "adapter" }`（全部为**当前生效值**）
+`PUT` 请求体（字段全可选，只更新传入项）：`{ "api_key"?, "base_url"?, "model"?, "width"?(300-600), "adapter"? }`
+`PUT` 响应 `data`：同 GET + 可选 `adapter_changed: true`；`adapter` 非法值返回 `4001`
+
+**生效语义（grill 2026-10-21 决策：全部即时）**：
+- `api_key` / `base_url` / `model`：写入 `settings` 表，`services/ai.py` **每次生成前**读一次 → 立即生效
+- `width`：写入 `settings` 表 + 贴边线程 `width` 同步改；UI 侧 `setFixedWidth` 立即变
+- `adapter`：**惰性重建**——只把 `state['adapter']` 置 `None`（**不 close**，在途请求拿旧实例跑完），
+  同时 `listen=False` 关监听、停贴边线程（下次 `ensure_docking` 按新 `no_activate` 重建）
+- **优先级**：`settings` 表 > `.env` > 内置默认（`.env` 仍是首次启动的兜底）
+
+### 4.12 `GET|POST|DELETE /api/quick-replies` — 话术库（V3）
+- `GET` → `data: { "items": [{ "id", "tag", "content", "sort" }] }`
+- `POST` ← `{ "tag": "常用", "content": "话术文本" }`（`tag` 空则存"常用"，`content` 空返回 `4001`）→ 返回**全量 items**
+- `DELETE /api/quick-replies/{id}` → `data: { "deleted": true, "items": [...] }`；id 不存在返回 `4001`
+- **不做编辑**（grill 决策：要改就删了重加）
 
 ---
 
@@ -339,10 +358,13 @@ QQ 模式读消息依赖剪贴板：在 QQ 里选中对方的话 Ctrl+C，侧边
 
 **已完成**：
 - 后端：`server.py` / `schemas.py` / `config.py` / `db.py` / `adapters/`（qq / wxauto / mock）/ `services/ai.py` / `services/docker.py`
-- 后端 9 接口全部按 §5 信封返回，已通过真实 HTTP 验证（9/9），见 `docs/验证报告.md`
+- 后端 **12 个接口**全部按 §5 信封返回，已通过真实 HTTP 验证（主流程 9/9、边界 8/8、V2/V3 10/10），见 `docs/验证报告.md`
 - 清理：`src-tauri/`、`package.json`、`backend/launcher.py`、`web/` 已全部删除（备份在 `_backup/`）
 - 前端：`desktop/` + `V0.connect`（三态）+ `V1.main`（会话/消息/回复/开关，含 WS 与 toast）
+  + **`V2.settings`**（§4.11）+ **`V3.quick_replies`**（§4.12）+ 右上角 **✕ 关闭应用**
 - **目标 IM 已切到 QQ**：`adapters/qq_adapter.py`（半自动：剪贴板读消息 + 激活窗口粘贴/回车）
+- **输入可编辑已修**：`mode=qq` 时去掉 `WindowDoesNotAcceptFocus` + `Docking(no_activate=False)`（§7.3），
+  "补充要求"可填、生成的回复可改（`_verify_input.py` 7/7 PASS）
 - **重复发送已修**：前端请求中禁用按钮 + 后端 3 秒幂等（§4.10）
 - **打包已完成**：`dist/SidebarIM.exe`（单文件、无控制台、**不签名**，见 §12）
 

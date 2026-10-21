@@ -72,6 +72,20 @@ class ListenIn(BaseModel):
     on: bool = False
 
 
+class SettingsIn(BaseModel):
+    """PUT /api/settings：字段全部可选，只更新传入的项（部分即时生效，适配器热切换）。"""
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    width: int | None = Field(default=None, ge=300, le=600)
+    adapter: str | None = None
+
+
+class QuickReplyIn(BaseModel):
+    tag: str = ''
+    content: str
+
+
 class MessageOut(BaseModel):
     type: str
     sender: str = ''

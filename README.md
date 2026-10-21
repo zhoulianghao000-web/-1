@@ -77,6 +77,9 @@ python -m PyInstaller packaging/build.spec --noconfirm --clean
 | 发送 | 粘贴并回车；**3 秒幂等**，连点不会重复发送 |
 | 贴边跟随 | win32 无焦点贴附 QQ 右侧，拖动/最大化自动跟随（已真机验证） |
 | 实时监听 | 默认关闭；开启后新消息自动出现在侧边栏 |
+| 设置页 ⚙ | 改 API Key / 模型 / 窗口宽度 / 适配器，**保存即时生效**（适配器热切换 + 自动关监听） |
+| 话术库 💬 | 常用话术按分类筛选，点一条插入回复框；支持新增 / 删除（不做编辑） |
+| 关闭 ✕ | 右上角一键退出整个应用（含内嵌后端） |
 
 ## QQ 模式的能力边界（重要）
 
@@ -112,6 +115,9 @@ python ../_verify_e2e.py boundary  # 边界（含重复发送幂等）
 python ../_verify_qq.py read       # QQ 链路：状态/会话/剪贴板读消息
 python ../_verify_qq.py fill      # QQ 真机粘贴（不发送）
 python ../_verify_dock.py          # 贴边跟随真机验证（真实窗口几何）
+python ../_verify_input.py         # 输入可编辑性（可获焦点/补充要求/回复可改）
+python ../_verify_v23.py           # V2/V3 接口（设置热生效 + 话术增删）
+python ../_verify_ui_v23.py        # V2/V3 UI 烟测（页面跳转 + 宽度即时生效）
 ```
 
 最新结果见 [`docs/验证报告.md`](./docs/验证报告.md)；截图在 `docs/screenshots/`。

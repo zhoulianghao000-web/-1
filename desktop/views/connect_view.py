@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget
 
 from theme import BRAND, ERROR, PANEL, SUB, TEXT, WARN
 
@@ -24,6 +24,7 @@ class ConnectView(QWidget):
     retry_clicked = Signal()
     continue_clicked = Signal()
     refresh_requested = Signal()
+    close_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -37,11 +38,18 @@ class ConnectView(QWidget):
         self.lblTitle.setObjectName('lblTitle')
         self.lblTitle.setStyleSheet(f'font-size: 15px; font-weight: 600; color: {TEXT};')
 
+        self.btnClose = QToolButton()
+        self.btnClose.setObjectName('btnClose')
+        self.btnClose.setText('✕')
+        self.btnClose.setToolTip('关闭侧边栏（退出应用）')
+        self.btnClose.clicked.connect(self.close_clicked.emit)
+
         head = QHBoxLayout()
         head.addWidget(self.lblIcon)
         head.addSpacing(6)
         head.addWidget(self.lblTitle)
         head.addStretch(1)
+        head.addWidget(self.btnClose)
 
         self.lblDetail = QLabel('正在请求 /api/status')
         self.lblDetail.setObjectName('lblDetail')

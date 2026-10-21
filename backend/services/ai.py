@@ -16,6 +16,31 @@ except ImportError:  # 作为包被导入时的兜底
 
 BASE_URL = _BASE_URL.rstrip('/')
 
+try:  # DB 里的设置优先于 .env（设置页保存后即时生效，不用重启）
+    import db
+except ImportError:
+    try:
+        import backend.db as db  # noqa: F811
+    except Exception:
+        db = None
+
+
+def llm_config() -> dict:
+    """每次调用前读一次：DB 设置 > .env/config > 内置默认。"""
+    def _s(key: str, fallback: str) -> str:
+        if db is None:
+            return fallback
+        try:
+            return db.get_setting(key) or fallback
+        except Exception:
+            return fallback
+
+    return {
+        'api_key': _s('openai_api_key', API_KEY or ''),
+        'base_url': _s('openai_base_url', BASE_URL).rstrip('/'),
+        'model': _s('llm_model', MODEL),
+    }
+
 SYSTEM_PROMPT = (
     '你是微信侧边栏里的回复助手。根据聊天记录，给出一条可以直接发送的中文回复。\n'
     '要求：口语化、简短（1-3 句）、不要解释、不要加引号、不要自称 AI。'
@@ -57,16 +82,18 @@ def _rule_based(messages: list[dict], who: str, instruction: str) -> str:
 
 def generate_reply(messages: list[dict], who: str, instruction: str = '') -> dict:
     prompt = build_prompt(messages, who, instruction)
-    if not API_KEY:
+    cfg = llm_config()
+    api_key, base_url, model = cfg['api_key'], cfg['base_url'], cfg['model']
+    if not api_key:
         return {'reply': _rule_based(messages, who, instruction), 'source': 'rule'}
 
     try:
         with httpx.Client(timeout=30) as client:
             r = client.post(
-                f'{BASE_URL}/chat/completions',
-                headers={'Authorization': f'Bearer {API_KEY}'},
+                f'{base_url}/chat/completions',
+                headers={'Authorization': f'Bearer {api_key}'},
                 json={
-                    'model': MODEL,
+                    'model': model,
                     'messages': [
                         {'role': 'system', 'content': SYSTEM_PROMPT},
                         {'role': 'user', 'content': prompt},
@@ -77,7 +104,7 @@ def generate_reply(messages: list[dict], who: str, instruction: str = '') -> dic
             )
             r.raise_for_status()
             reply = r.json()['choices'][0]['message']['content'].strip()
-            return {'reply': reply, 'source': f'llm:{MODEL}'}
+            return {'reply': reply, 'source': f'llm:{model}'}
     except Exception as e:
         return {
             'reply': _rule_based(messages, who, instruction),

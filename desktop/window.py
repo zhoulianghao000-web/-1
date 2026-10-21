@@ -13,11 +13,13 @@ import json
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWebSockets import QWebSocket
-from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QStackedWidget, QVBoxLayout, QWidget
 
 from api_client import ApiClient, ApiWorker
 from views.connect_view import ConnectView
 from views.main_view import MainView
+from views.quick_view import QuickView
+from views.settings_view import SettingsView
 
 VIEW_CONNECT = 'connect'
 VIEW_MAIN = 'main'
@@ -63,6 +65,7 @@ class SidebarWindow(QWidget):
         self.connect_view = ConnectView()
         self.connect_view.retry_clicked.connect(lambda: self.refresh_status(auto=False))
         self.connect_view.continue_clicked.connect(self.show_main)
+        self.connect_view.close_clicked.connect(self._quit_app)
         self.stack.addWidget(self.connect_view)
 
         # ---- V1 ----
@@ -74,7 +77,24 @@ class SidebarWindow(QWidget):
         self.main_view.send_clicked.connect(self.on_send)
         self.main_view.dock_toggled.connect(self.on_dock_toggle)
         self.main_view.listen_toggled.connect(self.on_listen_toggle)
+        self.main_view.close_clicked.connect(self._quit_app)
+        self.main_view.settings_clicked.connect(self.open_settings)
+        self.main_view.quick_clicked.connect(self.open_quick)
         self.stack.addWidget(self.main_view)
+
+        # ---- V2 设置 ----
+        self.settings_view = SettingsView()
+        self.settings_view.back_clicked.connect(self.show_main)
+        self.settings_view.save_clicked.connect(self.on_save_settings)
+        self.stack.addWidget(self.settings_view)
+
+        # ---- V3 话术库 ----
+        self.quick_view = QuickView()
+        self.quick_view.back_clicked.connect(self.show_main)
+        self.quick_view.insert_requested.connect(self.on_insert_quick)
+        self.quick_view.add_requested.connect(self.on_add_quick)
+        self.quick_view.delete_requested.connect(self.on_delete_quick)
+        self.stack.addWidget(self.quick_view)
 
         # 停留在 V0 时每 3 秒轮询一次 status（PRD §3 V0）
         self._timer = QTimer(self)
@@ -97,6 +117,11 @@ class SidebarWindow(QWidget):
         if self._last_status:
             self.main_view.set_status(self._last_status)
         self.load_sessions()
+
+    def _quit_app(self) -> None:
+        """✕ 关闭按钮：退出整个应用。exe 形态下内嵌后端同进程，一起退出。"""
+        self._ws_close()
+        QApplication.instance().quit()
 
     # ---------------- 默认位置与拖动 ----------------
     def showEvent(self, e) -> None:
@@ -315,6 +340,81 @@ class SidebarWindow(QWidget):
         else:
             self.main_view.toast('实时监听已关闭', 'ok')
             self._ws_close()
+
+    # ---------------- V2 设置页（CLAUDE.md §4.11）----------------
+    def open_settings(self) -> None:
+        self._spawn(lambda: self.client.get_settings(), self._on_settings_loaded)
+
+    def _on_settings_loaded(self, res: dict) -> None:
+        if not res.get('ok'):
+            self.main_view.toast(self._fail(res), 'error')
+            return
+        self.settings_view.set_settings(res['data'] or {})
+        self.stack.setCurrentWidget(self.settings_view)
+
+    def on_save_settings(self) -> None:
+        vals = self.settings_view.values()
+        self.settings_view.set_saving(True)
+        self._spawn(lambda: self.client.put_settings(**vals), self._on_settings_saved)
+
+    def _on_settings_saved(self, res: dict) -> None:
+        self.settings_view.set_saving(False)
+        if not res.get('ok'):
+            self.settings_view.toast(self._fail(res), 'error')
+            return
+        d = res['data'] or {}
+        # 宽度即时生效
+        w = int(d.get('width') or 380)
+        if w != self.width():
+            self.setFixedWidth(w)
+            self.resize(w, self.height())
+        if d.get('adapter_changed'):
+            # 适配器热切换：后端已惰性重建并关闭监听，UI 同步
+            self.main_view.set_listen(False)
+            self._ws_close()
+            self.settings_view.toast('已保存；适配器已切换、监听已关闭', 'warn')
+        else:
+            self.settings_view.toast('已保存（即时生效）', 'ok')
+        self.refresh_status(auto=False)  # 顶部状态条 / 焦点策略跟随新适配器
+
+    # ---------------- V3 话术库页（CLAUDE.md §4.12）----------------
+    def open_quick(self) -> None:
+        self._spawn(lambda: self.client.quick_replies(), self._on_quick_loaded)
+
+    def _on_quick_loaded(self, res: dict) -> None:
+        if not res.get('ok'):
+            self.main_view.toast(self._fail(res), 'error')
+            return
+        self.quick_view.set_items((res['data'] or {}).get('items') or [])
+        self.stack.setCurrentWidget(self.quick_view)
+
+    def on_insert_quick(self, text: str) -> None:
+        """插入话术：追加到回复框（已有内容则换行），并跳回主页面。"""
+        cur = self.main_view.reply_text()
+        self.main_view.set_reply((cur + '\n' + text) if cur else text, '')
+        self.stack.setCurrentWidget(self.main_view)
+        self.main_view.toast('已插入话术', 'ok')
+
+    def on_add_quick(self, tag: str, content: str) -> None:
+        self._spawn(lambda: self.client.add_quick_reply(tag, content), self._on_quick_added)
+
+    def _on_quick_added(self, res: dict) -> None:
+        if not res.get('ok'):
+            self.quick_view.toast(self._fail(res), 'error')
+            return
+        self.quick_view.set_items((res['data'] or {}).get('items') or [])
+        self.quick_view.clear_add_form()
+        self.quick_view.toast('已添加', 'ok')
+
+    def on_delete_quick(self, qid: int) -> None:
+        self._spawn(lambda: self.client.delete_quick_reply(qid), self._on_quick_deleted)
+
+    def _on_quick_deleted(self, res: dict) -> None:
+        if not res.get('ok'):
+            self.quick_view.toast(self._fail(res), 'error')
+            return
+        self.quick_view.set_items((res['data'] or {}).get('items') or [])
+        self.quick_view.toast('已删除', 'ok')
 
     # ---------------- WS 推送（PRD §3.6 G）----------------
     def _ws_url(self) -> QUrl:

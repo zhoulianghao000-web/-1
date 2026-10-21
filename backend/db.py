@@ -167,6 +167,14 @@ def list_quick_replies() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def delete_quick_reply(qid: int) -> bool:
+    """按 id 删除话术，返回是否真的删了。"""
+    with connect() as conn:
+        cur = conn.execute('DELETE FROM quick_replies WHERE id = ?', (qid,))
+        conn.commit()
+    return cur.rowcount > 0
+
+
 # ---------------- settings ----------------
 def set_setting(key: str, value: Any) -> None:
     with connect() as conn:

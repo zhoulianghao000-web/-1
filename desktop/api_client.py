@@ -88,6 +88,25 @@ class ApiClient:
     def listen(self, on: bool) -> dict:
         return self.unwrap(self._request('POST', '/api/listen', json={'on': on}))
 
+    # ---------- V2 设置页 / V3 话术库（CLAUDE.md §4.11 / §4.12）----------
+    def get_settings(self) -> dict:
+        return self.unwrap(self._request('GET', '/api/settings'))
+
+    def put_settings(self, **kwargs) -> dict:
+        body = {k: v for k, v in kwargs.items() if v is not None}
+        return self.unwrap(self._request('PUT', '/api/settings', json=body))
+
+    def quick_replies(self) -> dict:
+        return self.unwrap(self._request('GET', '/api/quick-replies'))
+
+    def add_quick_reply(self, tag: str, content: str) -> dict:
+        return self.unwrap(
+            self._request('POST', '/api/quick-replies', json={'tag': tag, 'content': content})
+        )
+
+    def delete_quick_reply(self, qid: int) -> dict:
+        return self.unwrap(self._request('DELETE', f'/api/quick-replies/{qid}'))
+
 
 class ApiWorker(QThread):
     """把任意 ApiClient 调用放到子线程；结果通过 Signal 回主线程（CLAUDE.md §7.4）。"""

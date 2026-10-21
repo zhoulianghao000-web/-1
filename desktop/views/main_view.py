@@ -33,6 +33,9 @@ class MainView(QWidget):
     listen_toggled = Signal(bool)
     refresh_sessions_clicked = Signal()
     session_selected = Signal(str)
+    close_clicked = Signal()
+    settings_clicked = Signal()
+    quick_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,14 +57,20 @@ class MainView(QWidget):
         self.btnSettings = QToolButton()
         self.btnSettings.setObjectName('btnSettings')
         self.btnSettings.setText('⚙')
-        self.btnSettings.setEnabled(False)
-        self.btnSettings.setToolTip('设置页：待接口就绪后开放（PRD §8）')
+        self.btnSettings.setToolTip('设置：API Key / 模型 / 窗口宽度 / 适配器')
+        self.btnSettings.clicked.connect(self.settings_clicked.emit)
 
         self.btnQuick = QToolButton()
         self.btnQuick.setObjectName('btnQuick')
         self.btnQuick.setText('💬')
-        self.btnQuick.setEnabled(False)
-        self.btnQuick.setToolTip('话术库：待接口就绪后开放（PRD §8）')
+        self.btnQuick.setToolTip('话术库：点一条插入回复框')
+        self.btnQuick.clicked.connect(self.quick_clicked.emit)
+
+        self.btnClose = QToolButton()
+        self.btnClose.setObjectName('btnClose')
+        self.btnClose.setText('✕')
+        self.btnClose.setToolTip('关闭侧边栏（退出应用）')
+        self.btnClose.clicked.connect(self.close_clicked.emit)
 
         top = QHBoxLayout()
         top.addWidget(self.lblNickname)
@@ -69,6 +78,7 @@ class MainView(QWidget):
         top.addStretch(1)
         top.addWidget(self.btnQuick)
         top.addWidget(self.btnSettings)
+        top.addWidget(self.btnClose)
 
         self.bannerNotice = QLabel('')
         self.bannerNotice.setObjectName('bannerNotice')
